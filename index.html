@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ジェンダーリビール</title>
+
+    <!-- =============================================
+       Firebase SDK（CDN版・compat形式）
+       ここのバージョンは必要に応じて変更してください
+       ============================================= -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <style>
+      /* ==============================
+       基本リセット
+       ============================== */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* ==============================
+       背景・レイアウト
+       ============================== */
+      body {
+        min-height: 100vh;
+        /* やさしいオレンジ～緑のグラデーション背景 */
+        background: linear-gradient(
+          160deg,
+          #fff8f0 0%,
+          #ffe0b2 35%,
+          #ffcc80 70%,
+          #ffa726 100%
+        );
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 16px 16px 40px;
+        font-family:
+          "Hiragino Maru Gothic Pro", "BIZ UDPGothic", "メイリオ", Arial,
+          sans-serif;
+        overflow-x: hidden;
+        user-select: none; /* テキスト選択を無効化（ゲームらしくするため） */
+      }
+
+      /* ==============================
+       ゲームタイトル
+       ============================== */
+      .game-title {
+        font-size: clamp(1.8rem, 7vw, 2.8rem);
+        color: #f57c00;
+        text-shadow:
+          3px 3px 0 #ffb74d,
+          5px 5px 0 rgba(245, 124, 0, 0.15);
+        margin: 10px 0 14px;
+        letter-spacing: 0.08em;
+        text-align: center;
+        animation: titleFloat 2.5s ease-in-out infinite;
+      }
+
+      /* タイトルのふわふわアニメーション */
+      @keyframes titleFloat {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+
+      /* ==============================
+       スコア表示エリア
+       ============================== */
+      .score-area {
+        background: rgba(255, 255, 255, 0.88);
+        border: 3px solid #ffb74d;
+        border-radius: 20px;
+        padding: 12px 28px 14px;
+        margin-bottom: 16px;
+        text-align: center;
+        box-shadow: 0 4px 18px rgba(245, 124, 0, 0.15);
+        width: 100%;
+        max-width: 320px;
+      }
+
+      .score-label {
+        font-size: 0.78rem;
+        color: #bf360c;
+        margin-bottom: 2px;
+        font-weight: bold;
+        letter-spacing: 0.1em;
+      }
+
+      /* 大きなカウント数字 */
+      .score-count {
+        font-size: clamp(2.4rem, 9vw, 3.8rem);
+        font-weight: bold;
+        color: #e65100;
+        line-height: 1.1;
+      }
+
+      /* 「あと○回」 */
+      .score-remaining {
+        font-size: clamp(0.9rem, 3.5vw, 1.1rem);
+        color: #f57c00;
+        font-weight: bold;
+        margin-top: 4px;
+      }
+
+      /* プログレスバー外枠 */
+      .progress-wrap {
+        width: 100%;
+        height: 14px;
+        background: #fff3e0;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 10px;
+        border: 2px solid #ffb74d;
+      }
+
+      /* プログレスバー本体 */
+      .progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #ffa726, #f57c00, #e65100);
+        border-radius: 10px;
+        transition: width 0.35s ease;
+      }
+
+      /* ==============================
+       卵のコンテナ
+       ============================== */
+      .egg-container {
+        position: relative;
+        width: clamp(180px, 50vw, 240px);
+        height: clamp(220px, 60vw, 295px);
+        margin: 0 auto 18px;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent; /* スマホのタップ色を消す */
+      }
+
+      /* 卵SVG全体 */
+      #egg-svg {
+        width: 100%;
+        height: 100%;
+        filter: drop-shadow(0 8px 20px rgba(245, 124, 0, 0.22));
+      }
+
+      /* タップ時のシェイクアニメーション */
+      @keyframes eggShake {
+        0% {
+          transform: scale(1) rotate(0deg);
+        }
+        20% {
+          transform: scale(1.07) rotate(-4deg);
+        }
+        40% {
+          transform: scale(1.07) rotate(4deg);
+        }
+        60% {
+          transform: scale(1.04) rotate(-2deg);
+        }
+        80% {
+          transform: scale(1.02) rotate(2deg);
+        }
+        100% {
+          transform: scale(1) rotate(0deg);
+        }
+      }
+
+      #egg-svg.tap-anim {
+        animation: eggShake 0.25s ease forwards;
+      }
+
+      /* 割れる直前の細かい震えアニメーション */
+      @keyframes eggTremor {
+        0%,
+        100% {
+          transform: translate(0, 0);
+        }
+        25% {
+          transform: translate(-4px, 1px) rotate(-1deg);
+        }
+        75% {
+          transform: translate(4px, -1px) rotate(1deg);
+        }
+      }
+
+      #egg-svg.pre-break {
+        animation: eggTremor 0.12s linear infinite;
+      }
+
+      /* ヒビのフェードインは CSS transition で */
+      .crack-group {
+        transition: opacity 0.6s ease;
+      }
+
+      /* ==============================
+       効果音テキスト（タップ時にポップ）
+       ============================== */
+      .sfx-popup {
+        position: fixed;
+        font-size: 1.5rem;
+        font-weight: bold;
+        pointer-events: none;
+        z-index: 500;
+        white-space: nowrap;
+        text-shadow: 1px 2px 4px rgba(0, 0, 0, 0.2);
+        animation: sfxFloat 0.85s ease-out forwards;
+      }
+
+      @keyframes sfxFloat {
+        0% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+        40% {
+          opacity: 1;
+          transform: translateY(-28px) scale(1.3);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-70px) scale(0.7);
+        }
+      }
+
+      /* ==============================
+       タップボタン
+       ============================== */
+      #tap-btn {
+        background: linear-gradient(145deg, #ffa726, #f57c00, #e65100);
+        color: white;
+        border: none;
+        border-radius: 60px;
+        padding: clamp(16px, 4vw, 22px) clamp(36px, 10vw, 65px);
+        font-size: clamp(1.2rem, 5.5vw, 1.6rem);
+        font-weight: bold;
+        font-family: inherit;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        box-shadow:
+          0 6px 0 #bf360c,
+          0 10px 25px rgba(245, 124, 0, 0.35);
+        transition:
+          transform 0.08s ease,
+          box-shadow 0.08s ease;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation; /* スマホでのダブルタップズームを防ぐ */
+      }
+
+      #tap-btn:active {
+        transform: translateY(5px);
+        box-shadow:
+          0 1px 0 #bf360c,
+          0 3px 10px rgba(245, 124, 0, 0.25);
+      }
+
+      #tap-btn:disabled {
+        background: linear-gradient(145deg, #ffe0b2, #ffb74d);
+        box-shadow: 0 4px 0 #bf360c;
+        cursor: default;
+        transform: none;
+      }
+
+      /* 連打制限の警告テキスト */
+      .rate-warning {
+        height: 22px;
+        font-size: 0.82rem;
+        color: #f57c00;
+        font-weight: bold;
+        text-align: center;
+        margin-top: 6px;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      .rate-warning.show {
+        opacity: 1;
+      }
+
+      /* ==============================
+       卵が割れた後の「誕生！」シーン
+       ============================== */
+      #birth-scene {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+
+      #birth-scene.show {
+        display: flex;
+        animation: birthReveal 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+
+      @keyframes birthReveal {
+        from {
+          opacity: 0;
+          transform: scale(0.4) rotate(-5deg);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) rotate(0deg);
+        }
+      }
+
+      /* ===== 割れた後：全体をピンクに切り替え ===== */
+      body.broken {
+        background: linear-gradient(
+          160deg,
+          #fff0f6 0%,
+          #fce4ec 30%,
+          #f8bbd0 65%,
+          #f48fb1 100%
+        ) !important;
+        transition: background 1.2s ease;
+      }
+
+      /* 「女の子！」タイトル（ピンク＋グロー） */
+      .birth-title {
+        font-size: clamp(2rem, 9vw, 3rem);
+        color: #e91e63;
+        text-shadow:
+          3px 3px 0 #f48fb1,
+          5px 5px 0 rgba(233, 30, 99, 0.2),
+          0 0 24px rgba(233, 30, 99, 0.5);
+        margin-top: 24px;
+        margin-bottom: 12px;
+        animation: titleFloat 1.2s ease-in-out infinite;
+      }
+
+      /* 女の子のSVGコンテナ */
+      #girl-container {
+        width: clamp(180px, 50vw, 230px);
+        height: clamp(230px, 60vw, 295px);
+        margin-bottom: 12px;
+        filter: drop-shadow(0 8px 30px rgba(233, 30, 99, 0.5));
+      }
+
+      .birth-message {
+        font-size: clamp(0.95rem, 3.5vw, 1.1rem);
+        color: #c2185b;
+        font-weight: bold;
+        text-align: center;
+        text-shadow: 1px 1px 0 #f8bbd0;
+      }
+
+      /* ===== キラキラ浮遊スパークル ===== */
+      .sparkle {
+        position: fixed;
+        pointer-events: none;
+        z-index: 200;
+        opacity: 0;
+        font-size: var(--size, 1.2rem);
+        color: var(--color, #e91e63);
+        animation: sparkleFly var(--dur, 3s) ease-in-out var(--delay, 0s) infinite;
+      }
+
+      @keyframes sparkleFly {
+        0%   { opacity: 0;   transform: translateY(0)     scale(0.4) rotate(0deg); }
+        15%  { opacity: 1; }
+        85%  { opacity: 0.7; }
+        100% { opacity: 0;   transform: translateY(-90vh) scale(1.3) rotate(var(--rot, 360deg)); }
+      }
+
+      /* スコアボード・ボタンのピンク上書き（割れ後） */
+      body.broken .score-area {
+        border-color: #f48fb1;
+        box-shadow: 0 4px 18px rgba(233, 30, 99, 0.2);
+      }
+      body.broken .progress-bar {
+        background: linear-gradient(90deg, #f06292, #e91e63, #c2185b);
+      }
+
+      /* ==============================
+       テスト用リセットボタン
+       ============================== */
+      #reset-btn {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 500;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1.5px solid #ffb74d;
+        color: #e65100;
+        font-size: 0.78rem;
+        font-weight: bold;
+        padding: 5px 11px;
+        border-radius: 20px;
+        cursor: pointer;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: background 0.2s;
+      }
+      #reset-btn:hover {
+        background: #fff3e0;
+      }
+
+      /* ==============================
+       爆発・パーティクルエフェクト
+       ============================== */
+      #burst-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 300;
+        overflow: hidden;
+      }
+
+      /* 丸いパーティクル */
+      .burst-particle {
+        position: absolute;
+        border-radius: 50%;
+        animation: burstFly var(--dur, 0.9s) ease-out forwards;
+      }
+
+      @keyframes burstFly {
+        0% {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: var(--end-pos, translate(100px, -100px)) scale(0.1);
+        }
+      }
+
+      /* 絵文字パーティクル */
+      .emoji-particle {
+        position: absolute;
+        font-size: clamp(1.2rem, 4vw, 1.8rem);
+        animation: emojiFly var(--dur, 1s) ease-out forwards;
+      }
+
+      @keyframes emojiFly {
+        0% {
+          opacity: 1;
+          transform: translate(0, 0) rotate(0deg) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: var(--end-pos) rotate(var(--rot, 360deg)) scale(0.2);
+        }
+      }
+
+      /* ==============================
+       接続状態バッジ（右上）
+       ============================== */
+      .conn-status {
+        position: fixed;
+        top: 8px;
+        right: 8px;
+        font-size: 0.7rem;
+        font-weight: bold;
+        padding: 3px 10px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1.5px solid currentColor;
+        z-index: 100;
+      }
+
+      .conn-status.online {
+        color: #4caf50;
+      }
+      .conn-status.offline {
+        color: #f44336;
+      }
+      .conn-status.local {
+        color: #ff9800;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 接続状態バッジ（右上に表示） -->
+    <div class="conn-status local" id="conn-status">📱 ローカルモード</div>
+
+    <!-- 爆発エフェクト用コンテナ（常に最前面） -->
+    <div id="burst-container"></div>
+
+    <!-- テスト用リセットボタン -->
+    <button id="reset-btn" onclick="resetGame()" title="カウントをリセット">
+      🔄 リセット
+    </button>
+
+    <!-- ゲームタイトル -->
+    <h1 class="game-title">👶 男の子？　女の子？</h1>
+
+    <!-- スコアエリア -->
+    <div class="score-area">
+      <div class="score-label">タップ数</div>
+      <div class="score-count" id="count-display">0</div>
+      <div class="score-remaining" id="remaining-display">あと 500 回！</div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+    </div>
+
+    <!-- =============================================
+     🥚 卵のSVGイラスト
+     ここのSVGを変更すれば卵のデザインを変えられます。
+     外部画像を使う場合は <img> タグに差し替えてください。
+     ============================================= -->
+    <div class="egg-container" id="egg-wrap">
+      <svg
+        id="egg-svg"
+        viewBox="0 0 200 245"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <!-- 通常時の卵グラデーション -->
+          <radialGradient id="eggGrad" cx="35%" cy="28%" r="68%">
+            <stop offset="0%" stop-color="#fffde7" />
+            <stop offset="55%" stop-color="#fff9c4" />
+            <stop offset="100%" stop-color="#fbc02d" />
+          </radialGradient>
+          <!-- 割れかけ（400回以上）の卵グラデーション -->
+          <radialGradient id="eggGradHot" cx="35%" cy="28%" r="68%">
+            <stop offset="0%" stop-color="#fff9c4" />
+            <stop offset="60%" stop-color="#ffe082" />
+            <stop offset="100%" stop-color="#e64a19" />
+          </radialGradient>
+          <!-- 内側から漏れる光（割れかけ演出） -->
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <!-- 卵の影 -->
+        <ellipse cx="100" cy="238" rx="62" ry="10" fill="rgba(0,0,0,0.1)" />
+
+        <!-- 卵本体 -->
+        <path
+          id="egg-body"
+          d="M100,8
+         C148,8 178,58 178,118
+         C178,178 148,232 100,232
+         C52,232 22,178 22,118
+         C22,58 52,8 100,8 Z"
+          fill="url(#eggGrad)"
+          stroke="#f9a825"
+          stroke-width="2"
+        />
+
+        <!-- 光沢（左上のハイライト） -->
+        <ellipse
+          cx="72"
+          cy="65"
+          rx="18"
+          ry="28"
+          fill="rgba(255,255,255,0.45)"
+          transform="rotate(-25,72,65)"
+        />
+
+        <!-- 小さなハイライト -->
+        <ellipse
+          cx="58"
+          cy="50"
+          rx="7"
+          ry="10"
+          fill="rgba(255,255,255,0.3)"
+          transform="rotate(-20,58,50)"
+        />
+
+        <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         ヒビ割れ（タップ数に応じて段階的に表示）
+         各グループの opacity を JS で操作しています
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+
+        <!-- Stage 1：100タップ以上で表示（頂上にひびが入る） -->
+        <g id="crack-1" class="crack-group" opacity="0">
+          <path
+            d="M100,8 L96,38 L106,54 L99,78"
+            stroke="#6d4c41"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M96,38 L86,43"
+            stroke="#6d4c41"
+            stroke-width="1.5"
+            fill="none"
+          />
+        </g>
+
+        <!-- Stage 2：200タップ以上で表示（右側にひびが入る） -->
+        <g id="crack-2" class="crack-group" opacity="0">
+          <path
+            d="M178,118 L158,113 L148,123 L132,117 L122,130"
+            stroke="#5d4037"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M158,113 L162,102"
+            stroke="#5d4037"
+            stroke-width="1.5"
+            fill="none"
+          />
+        </g>
+
+        <!-- Stage 3：300タップ以上で表示（左下にひびが入る） -->
+        <g id="crack-3" class="crack-group" opacity="0">
+          <path
+            d="M38,155 L58,150 L68,162 L84,154 L92,168 L82,178"
+            stroke="#4e342e"
+            stroke-width="2.5"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M68,162 L72,174 L62,182"
+            stroke="#4e342e"
+            stroke-width="1.5"
+            fill="none"
+          />
+          <path
+            d="M106,54 L118,70 L110,86 L124,97"
+            stroke="#4e342e"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+        </g>
+
+        <!-- Stage 4：400タップ以上で表示（全体にひびが広がり、中から光が漏れる） -->
+        <g id="crack-4" class="crack-group" opacity="0">
+          <path
+            d="M92,168 L97,183 L90,198 L102,212 L112,202 L107,186 L118,168"
+            stroke="#3e2723"
+            stroke-width="2.5"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M22,118 L44,123 L56,113 L68,128"
+            stroke="#3e2723"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M99,78 L113,88 L120,103 L134,97"
+            stroke="#3e2723"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <!-- 内側から漏れる光（glowフィルター） -->
+          <path
+            d="M100,8 L96,38 L106,54 L99,78"
+            stroke="rgba(255,220,0,0.65)"
+            stroke-width="5"
+            fill="none"
+            stroke-linecap="round"
+            filter="url(#glow)"
+          />
+          <path
+            d="M92,168 L97,183 L90,198 L102,212"
+            stroke="rgba(255,180,0,0.5)"
+            stroke-width="4"
+            fill="none"
+            stroke-linecap="round"
+            filter="url(#glow)"
+          />
+        </g>
+
+        <!-- 割れた殻（500回達成後に表示） -->
+        <g id="egg-broken" opacity="0" style="transition: opacity 0.3s">
+          <path
+            d="M22,118 C22,78 50,22 92,9 L88,48 L82,78 L72,100 L55,118 L40,155 L35,185 C28,168 22,145 22,118 Z"
+            fill="#fbc02d"
+            stroke="#e65100"
+            stroke-width="1.5"
+          />
+          <path
+            d="M178,118 C178,78 150,22 108,9 L112,48 L118,78 L128,97 L145,112 L160,148 L165,180 C172,163 178,143 178,118 Z"
+            fill="#ffe082"
+            stroke="#e65100"
+            stroke-width="1.5"
+          />
+        </g>
+      </svg>
+    </div>
+
+    <!-- =============================================
+     👧 女の子の誕生シーン
+     卵が割れた後に表示されます。
+     ここのSVGを変更すれば女の子のデザインを変えられます。
+     外部画像（PNG等）を使う場合は <img> タグに差し替えてください。
+     ============================================= -->
+    <div id="birth-scene">
+      <div class="birth-title">女の子！</div>
+
+      <div id="girl-container">
+        <!-- 女の子の赤ちゃんイラスト -->
+        <img
+          src="./baby-girl.png"
+          alt="女の子の赤ちゃん"
+          style="width: 100%; height: 100%; object-fit: contain; display: block"
+        />
+      </div>
+
+      <p class="birth-message">みんなよろしくね💕</p>
+    </div>
+
+    <!-- タップボタン -->
+    <button id="tap-btn" onclick="handleTap()">ここをタップ！</button>
+
+    <!-- 連打制限の警告 -->
+    <div class="rate-warning" id="rate-warning">
+      ⚡ ちょっと待って！速すぎ！
+    </div>
+
+    <script>
+      /* ================================================================
+   🔥 ① Firebase 設定
+   ================================================================
+   【設定方法】
+   1. https://console.firebase.google.com/ でプロジェクトを作成
+   2. 左メニュー「構築」→「Realtime Database」→「データベースを作成」
+      ※ セキュリティルールは「テストモード」で開始
+   3. プロジェクト設定（⚙）→「マイアプリ」→「ウェブアプリを追加」
+   4. 表示された firebaseConfig の値をここに貼り付け
+
+   ※ このままだと「ローカルモード」で動きます（個人端末のみ有効）
+   ================================================================ */
+      const FIREBASE_CONFIG = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_AUTH_DOMAIN",
+        databaseURL: "YOUR_DATABASE_URL", // ← 必須：Realtime Database の URL
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_STORAGE_BUCKET",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID",
+      };
+      /* ================================================================ */
+
+      /* ================================================================
+   ② ゲーム定数
+   ここを変えると難易度・挙動をカスタマイズできます
+   ================================================================ */
+      const MAX_TAPS = 100; // 何回タップで卵が割れるか
+      const RATE_LIMIT = 5; // 1秒間に許可するタップ数の上限（不正連打対策）
+      const RATE_MS = 1000; // レート計測ウィンドウ（ミリ秒）
+      /* ================================================================ */
+
+      /* ================================================================
+   ③ 効果音テキスト・カラー
+   SFX_TEXTS の配列を編集することで、タップ時のテキストを変えられます
+   ================================================================ */
+      const SFX_TEXTS = [
+        "コツン！",
+        "ポン！",
+        "ペチッ！",
+        "コン！",
+        "ヒビ？",
+        "ガン！",
+        "ポコ！",
+      ];
+
+      const SFX_COLORS = [
+        "#f57c00",
+        "#9c27b0",
+        "#1565c0",
+        "#00897b",
+        "#f57f17",
+        "#e64a19",
+        "#bf360c",
+        "#6d4c41",
+        "#0288d1",
+      ];
+      /* ================================================================ */
+
+      /* ========================
+   内部状態変数
+   ======================== */
+      let currentCount = 0; // 現在のタップ数
+      let isBroken = false; // 卵が割れたか
+      let tapTimestamps = []; // 連打制限用タイムスタンプ
+      let rateWarnTimer = null; // 警告非表示タイマー
+
+      // カウントを増やす関数（Firebase or ローカル で上書きされる）
+      let incrementCount = () => {};
+
+      /* ================================================================
+   ストレージ初期化（Firebase OR ローカルストレージの自動切り替え）
+   ================================================================ */
+      function initStorage() {
+        // Firebase 設定がプレースホルダーのまま → ローカルモード
+        const isConfigured =
+          FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY" &&
+          FIREBASE_CONFIG.databaseURL !== "YOUR_DATABASE_URL";
+
+        if (isConfigured) {
+          initFirebase();
+        } else {
+          initLocalMode();
+        }
+      }
+
+      /* ---- Firebase モード ---- */
+      function initFirebase() {
+        try {
+          firebase.initializeApp(FIREBASE_CONFIG);
+          const dbRef = firebase.database().ref("eggTapCount"); // Firebaseのデータパス名
+
+          /* リアルタイムでカウントを監視して UI を更新 */
+          dbRef.on("value", (snapshot) => {
+            const val = snapshot.val();
+            updateUI(typeof val === "number" ? val : 0);
+          });
+
+          /* タップ時の処理：Firebase のトランザクショ#e�でカウントを +1 */
+          incrementCount = () => {
+            dbRef.transaction((cur) => (typeof cur === "number" ? cur : 0) + 1);
+          };
+
+          /* 接続状態の監視 */
+          firebase
+            .database()
+            .ref(".info/connected")
+            .on("value", (snap) => {
+              setConnStatus(
+                snap.val() ? "online" : "offline",
+                snap.val() ? "🌐 みんなでプレイ中" : "📡 再接続中...",
+              );
+            });
+        } catch (e) {
+          console.warn(
+            "Firebase エラー。ローカルモードにフォールバックします:",
+            e,
+          );
+          initLocalMode();
+        }
+      }
+
+      /* ---- ローカルストレージモード ---- */
+      function initLocalMode() {
+        setConnStatus("local", "📱 ローカルモード");
+
+        // ローカルストレージからカウントを読み込み
+        const saved = parseInt(localStorage.getItem("eggTapCount"), 10) || 0;
+        updateUI(saved);
+
+        // ローカルでのインクリメント
+        incrementCount = () => {
+          const cur = parseInt(localStorage.getItem("eggTapCount"), 10) || 0;
+          const next = Math.min(cur + 1, MAX_TAPS);
+          localStorage.setItem("eggTapCount", String(next));
+          updateUI(next);
+        };
+      }
+
+      /* 接続状態バッジを更新 */
+      function setConnStatus(type, text) {
+        const el = document.getElementById("conn-status");
+        el.textContent = text;
+        el.className = "conn-status " + type;
+      }
+
+      /* ================================================================
+   タップ処理（ボタンクリック・タップで呼ばれる）
+   ================================================================ */
+      /* ---- キラキラスパークル（誕生後） ---- */
+      function startSparkles() {
+        const chars  = ['✦','✨','★','✿','♡','🌸','💕','💖','✼','❋','⋆','🎀'];
+        const colors = ['#e91e63','#f48fb1','#ff4081','#ce93d8','#f06292',
+                        '#ff80ab','#ec407a','#ad1457','#ffd6e8','#ff8fab'];
+        const count = 30;
+        for (let i = 0; i < count; i++) {
+          const el = document.createElement('span');
+          el.className = 'sparkle';
+          el.textContent = chars[Math.floor(Math.random() * chars.length)];
+          const dur   = (2 + Math.random() * 3.5).toFixed(2);
+          const delay = (Math.random() * 4).toFixed(2);
+          const size  = (0.7 + Math.random() * 1.6).toFixed(2);
+          const rot   = (Math.random() > 0.5 ? '' : '-') + (120 + Math.floor(Math.random() * 240)) + 'deg';
+          el.style.setProperty('--dur',   dur   + 's');
+          el.style.setProperty('--delay', delay + 's');
+          el.style.setProperty('--size',  size  + 'rem');
+          el.style.setProperty('--color', colors[Math.floor(Math.random() * colors.length)]);
+          el.style.setProperty('--rot',   rot);
+          el.style.left   = (Math.random() * 100) + 'vw';
+          el.style.bottom = (Math.random() * 20)  + 'vh';
+          document.body.appendChild(el);
+        }
+      }
+
+      /* ---- テスト用リセット ---- */
+      function resetGame() {
+        localStorage.removeItem("eggTapCount");
+        location.reload();
+      }
+
+      function handleTap() {
+        if (isBroken) return; // 割れた後はタップ無効
+
+        /* ---- 連打制限チェック ---- */
+        const now = Date.now();
+        // 古いタイムスタンプを削除
+        tapTimestamps = tapTimestamps.filter((t) => now - t < RATE_MS);
+
+        if (tapTimestamps.length >= RATE_LIMIT) {
+          showRateWarning(); // 連打しすぎ警告
+          return;
+        }
+        tapTimestamps.push(now);
+        /* -------------------------- */
+
+        incrementCount(); // カウントを +1
+        animateEggShake(); // 卵をシェイク
+        showSfxPopup(); // 効果音テキスト
+      }
+
+      /* 卵のシェイクアニメーション */
+      function animateEggShake() {
+        const el = document.getElementById("egg-svg");
+        el.classList.remove("tap-anim");
+        void el.offsetWidth; // アニメーションをリセット
+        el.classList.add("tap-anim");
+        setTimeout(() => el.classList.remove("tap-anim"), 280);
+      }
+
+      /* 連打制限の警告を表示 */
+      function showRateWarning() {
+        const el = document.getElementById("rate-warning");
+        el.classList.add("show");
+        if (rateWarnTimer) clearTimeout(rateWarnTimer);
+        rateWarnTimer = setTimeout(() => el.classList.remove("show"), 1200);
+      }
+
+      /* ================================================================
+   効果音テキスト（タップ時にポップアップ表示）
+   ================================================================ */
+      function showSfxPopup() {
+        const text = SFX_TEXTS[Math.floor(Math.random() * SFX_TEXTS.length)];
+        const color = SFX_COLORS[Math.floor(Math.random() * SFX_COLORS.length)];
+
+        // ボタンの位置を基準にランダムなX位置に出す
+        const btn = document.getElementById("tap-btn");
+        const rect = btn.getBoundingClientRect();
+        const x = rect.left + rect.width / 2 + (Math.random() - 0.5) * 120;
+        const y = rect.top - 8;
+
+        const el = document.createElement("div");
+        el.className = "sfx-popup";
+        el.textContent = text;
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+        el.style.color = color;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 950); // アニメーション終了後に削除
+      }
+
+      /* ================================================================
+   UI 更新（カウントが変わるたびに呼ばれる）
+   ================================================================ */
+      function updateUI(count) {
+        currentCount = Math.min(count, MAX_TAPS);
+        const remaining = MAX_TAPS - currentCount;
+
+        // カウント数字
+        document.getElementById("count-display").textContent =
+          currentCount.toLocaleString("ja-JP");
+
+        // 残り回数テキスト
+        document.getElementById("remaining-display").textContent =
+          remaining <= 0
+            ? "🎉 達成！"
+            : `あと ${remaining.toLocaleString("ja-JP")} 回！`;
+
+        // プログレスバー
+        const pct = Math.min((currentCount / MAX_TAPS) * 100, 100);
+        document.getElementById("progress-bar").style.width = pct + "%";
+
+        // ヒビ割れ演出を更新
+        updateCracks(currentCount);
+
+        // 500回達成！
+        if (currentCount >= MAX_TAPS && !isBroken) {
+          triggerBreak();
+        }
+      }
+
+      /* ================================================================
+   ヒビ割れ段階の更新
+   ================================================================ */
+      function updateCracks(count) {
+        /* 各ステージのしきい値 */
+        const stages = [
+          { id: "crack-1", threshold: Math.floor(MAX_TAPS * 0.2) }, // 20%（100回）
+          { id: "crack-2", threshold: Math.floor(MAX_TAPS * 0.4) }, // 40%（200回）
+          { id: "crack-3", threshold: Math.floor(MAX_TAPS * 0.6) }, // 60%（300回）
+          { id: "crack-4", threshold: Math.floor(MAX_TAPS * 0.8) }, // 80%（400回）
+        ];
+
+        stages.forEach(({ id, threshold }) => {
+          const el = document.getElementById(id);
+          if (el) el.style.opacity = count >= threshold ? "1" : "0";
+        });
+
+        const eggSvg = document.getElementById("egg-svg");
+        const eggBody = document.getElementById("egg-body");
+        const preBreakThreshold = Math.floor(MAX_TAPS * 0.8); // 80%以上でドキドキ
+
+        if (count >= preBreakThreshold && count < MAX_TAPS) {
+          eggSvg.classList.add("pre-break");
+          eggBody.setAttribute("fill", "url(#eggGradHot)"); // 卵が赤みがかる
+        } else if (count < preBreakThreshold) {
+          eggSvg.classList.remove("pre-break");
+          eggBody.setAttribute("fill", "url(#eggGrad)");
+        }
+      }
+
+      /* ================================================================
+   卵が割れる演出！
+   ================================================================ */
+      function triggerBreak() {
+        isBroken = true;
+
+        const eggSvg = document.getElementById("egg-svg");
+        const btn = document.getElementById("tap-btn");
+
+        eggSvg.classList.remove("pre-break"); // 震えを止める
+        btn.disabled = true;
+        btn.style.display = "none";
+
+        // 少し待ってから爆発エフェクト
+        setTimeout(() => {
+          // 割れた殻を表示
+          document.getElementById("egg-broken").style.opacity = "1";
+          triggerBurstParticles();
+
+          // 殻が消えて女の子が現れる
+          setTimeout(() => {
+            document.getElementById("egg-wrap").style.display = "none";
+            const scene = document.getElementById("birth-scene");
+            scene.classList.add("show");
+            // 背景をピンクに切り替え＆キラキラ開始
+            document.body.classList.add("broken");
+            triggerEmojiRain();
+            startSparkles();
+          }, 500);
+        }, 120);
+      }
+
+      /* ---- 爆発パーティクル ---- */
+      function triggerBurstParticles() {
+        const container = document.getElementById("burst-container");
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+
+        const colors = [
+          "#ff8f00",
+          "#f57c00",
+          "#9c27b0",
+          "#3f51b5",
+          "#ffeb3b",
+          "#4caf50",
+          "#ff9800",
+          "#00bcd4",
+          "#f44336",
+        ];
+
+        // 丸いカラフルパーティクル 45個
+        for (let i = 0; i < 45; i++) {
+          const p = document.createElement("div");
+          p.className = "burst-particle";
+          const size = Math.random() * 18 + 8;
+          p.style.cssText = `
+      width:${size}px; height:${size}px;
+      background:${colors[i % colors.length]};
+      left:${cx}px; top:${cy}px;
+    `;
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * 320 + 80;
+          p.style.setProperty(
+            "--end-pos",
+            `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`,
+          );
+          p.style.setProperty("--dur", Math.random() * 0.5 + 0.65 + "s");
+          container.appendChild(p);
+          setTimeout(() => p.remove(), 1400);
+        }
+      }
+
+      /* ---- 絵文字の雨エフェクト ---- */
+      function triggerEmojiRain() {
+        const container = document.getElementById("burst-container");
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight * 0.35;
+        const emojis = [
+          "⭐",
+          "🌟",
+          "✨",
+          "💕",
+          "🎉",
+          "🎊",
+          "💖",
+          "🌸",
+          "🎀",
+          "💫",
+          "🌈",
+        ];
+
+        for (let i = 0; i < 24; i++) {
+          const e = document.createElement("div");
+          e.className = "emoji-particle";
+          e.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+          e.style.left = cx + (Math.random() - 0.5) * 260 + "px";
+          e.style.top = cy + (Math.random() - 0.5) * 120 + "px";
+
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * 230 + 60;
+          const endX = Math.cos(angle) * dist;
+          const endY = Math.sin(angle) * dist - 120;
+          const rot =
+            (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 540 + 180);
+          e.style.setProperty("--end-pos", `translate(${endX}px,${endY}px)`);
+          e.style.setProperty("--rot", rot + "deg");
+          e.style.setProperty("--dur", Math.random() * 0.7 + 0.8 + "s");
+          container.appendChild(e);
+          setTimeout(() => e.remove(), 1800);
+        }
+      }
+
+      /* ========================
+   ゲーム開始
+   ======================== */
+      initStorage();
+    </script>
+
+    <!--
+=================================================================
+📘 初心者向けガイド
+
+【1】Replitでの動かし方
+  ① このファイル（index.html）は artifacts/html-site/ フォルダにあります
+  ② サイドバーで「html-site: web」ワークフローが起動していることを確認
+  ③ 右のプレビューパネルで「Plain HTML Site」を選ぶと表示されます
+
+【2】Firebase の設定方法
+  ① https://console.firebase.google.com/ にアクセス（Googleアカウントが必要）
+  ② 「プロジェクトを作成」→ 好きな名前を入力して作成
+  ③ 左メニュー「構築」→「Realtime Database」→「データベースを作成」
+     ・ロケーションはデフォルトでOK
+     ・セキュリティルールは「テストモードで開始」を選択
+  ④ 左上の「⚙ プロジェクトの設定」→「マイアプリ」→「</>（ウェブ）」
+  ⑤ アプリのニックネームを入力して「アプリを登録」
+  ⑥ 表示された firebaseConfig の中身を、このファイルの
+     「FIREBASE_CONFIG = { ... }」にコピー&ペーストしてください
+
+  ※ セキュリティルール（本番用推奨）
+  {
+    "rules": {
+      "eggTapCount": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+
+【3】イラストの変更方法
+  ・卵のデザイン
+    → このファイル内の「🥚 卵のSVGイラスト」コメントの下のSVGを編集
+    → 外部画像（PNG等）を使う場合は
+       <img src="卵の画像URL" width="200"> に差し替えも可能
+
+  ・女の子のデザイン
+    → このファイル内の「👧 かわいい女の子のSVGイラスト」コメントの下を編集
+    → 外部画像を使う場合は <img src="女の子の画像URL" width="200"> に差し替え可能
+
+【4】その他のカスタマイズ
+  ・割れるまでの回数  → MAX_TAPS の値を変更（デフォルト: 500）
+  ・連打制限         → RATE_LIMIT の値を変更（デフォルト: 1秒5回まで）
+  ・効果音テキスト   → SFX_TEXTS 配列に文字列を追加・変更
+=================================================================
+-->
+  </body>
+</html>
